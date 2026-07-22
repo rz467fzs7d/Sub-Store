@@ -189,4 +189,59 @@ describe('flow headers requests', function () {
         ]);
         expect(maxActiveRequests).to.equal(1);
     });
+
+    it('caches empty flow header results without repeating HEAD and GET probes', async function () {
+        openApi.HTTP = () => ({
+            head: async (options) => {
+                capturedRequests.push({ method: 'HEAD', options });
+                return { headers: {} };
+            },
+            get: async (options) => {
+                capturedRequests.push({ method: 'GET', options });
+                return {
+                    headers: {},
+                    statusCode: 200,
+                };
+            },
+        });
+
+        await getFlowHeaders('https://example.com/no-flow');
+        await getFlowHeaders('https://example.com/no-flow');
+
+        expect(capturedRequests.map((request) => request.method)).to.deep.equal([
+            'HEAD',
+            'GET',
+        ]);
+        expect(infoLogs.some((message) => message.includes('使用缓存的空流量信息'))).to.equal(
+            true,
+        );
+    });
+
+    it('does not cache empty flow headers when the fallback GET request fails', async function () {
+        openApi.HTTP = () => ({
+            head: async (options) => {
+                capturedRequests.push({ method: 'HEAD', options });
+                return { headers: {}, statusCode: 200 };
+            },
+            get: async (options) => {
+                capturedRequests.push({ method: 'GET', options });
+                throw new Error('connect timeout');
+            },
+        });
+
+        for (let index = 0; index < 2; index += 1) {
+            try {
+                await getFlowHeaders('https://example.com/flaky-no-flow');
+            } catch (e) {
+                expect(e.message).to.equal('connect timeout');
+            }
+        }
+
+        expect(capturedRequests.map((request) => request.method)).to.deep.equal([
+            'HEAD',
+            'GET',
+            'HEAD',
+            'GET',
+        ]);
+    });
 });

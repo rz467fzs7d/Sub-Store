@@ -6,6 +6,15 @@ import $ from '@/core/app';
 import headersResourceCache from '@/utils/headers-resource-cache';
 import { runBackendRequestTask } from '@/utils/request-concurrency';
 
+const NO_FLOW_HEADERS_CACHE = '__SUB_STORE_NO_FLOW_HEADERS__';
+
+function isCacheableFlowResponse(statusCode) {
+    return (
+        typeof statusCode === 'undefined' ||
+        (statusCode >= 200 && statusCode < 400)
+    );
+}
+
 export function getFlowField(headers) {
     const keys = Object.keys(headers);
     let sub = '';
@@ -107,7 +116,16 @@ export async function getFlowHeaders(
     );
     const cached = headersResourceCache.get(id);
     let flowInfo;
+    let cacheEmptyFlowInfo = false;
     if (!$arguments?.noCache && cached) {
+        if (cached === NO_FLOW_HEADERS_CACHE) {
+            $.info(
+                `使用缓存的空流量信息: ${url}, ${
+                    customHeaders ? JSON.stringify(customHeaders) : userAgent
+                }`,
+            );
+            return;
+        }
         $.info(
             `使用缓存的流量信息: ${url}, ${
                 customHeaders ? JSON.stringify(customHeaders) : userAgent
@@ -146,6 +164,7 @@ export async function getFlowHeaders(
                     throw new Error(`statusCode: ${statusCode}`);
                 }
                 flowUrlHeaders = headers;
+                cacheEmptyFlowInfo = true;
                 const parsed = parseFlowHeaders(body);
                 if (
                     Number.isFinite(parsed?.total) &&
@@ -208,7 +227,7 @@ export async function getFlowHeaders(
                             : `User-Agent: ${userAgent || ''}`
                     }, Insecure: ${!!insecure}, Proxy: ${proxy}`,
                 );
-                const { headers } = await runBackendRequestTask(() =>
+                const { headers, statusCode } = await runBackendRequestTask(() =>
                     http.head({
                         url: url
                             .split(/[\r\n]+/)
@@ -236,6 +255,7 @@ export async function getFlowHeaders(
                     'flow headers HEAD',
                 );
                 flowInfo = getFlowField(headers);
+                cacheEmptyFlowInfo = isCacheableFlowResponse(statusCode);
             } catch (e) {
                 $.error(
                     `使用 HEAD 方法从响应头获取流量信息失败: ${url}, ${
@@ -255,7 +275,7 @@ export async function getFlowHeaders(
                             : `User-Agent: ${userAgent || ''}`
                     }, Insecure: ${!!insecure}, Proxy: ${proxy}`,
                 );
-                const { headers } = await runBackendRequestTask(() =>
+                const { headers, statusCode } = await runBackendRequestTask(() =>
                     http.get({
                         url: url
                             .split(/[\r\n]+/)
@@ -283,6 +303,7 @@ export async function getFlowHeaders(
                     'flow headers GET',
                 );
                 flowInfo = getFlowField(headers);
+                cacheEmptyFlowInfo = isCacheableFlowResponse(statusCode);
             }
         }
         if (flowInfo) {
@@ -292,6 +313,14 @@ export async function getFlowHeaders(
             headersResourceCache.set(
                 id,
                 flowInfo,
+                $arguments?.headersCacheTtl
+                    ? $arguments?.headersCacheTtl * 1000
+                    : undefined,
+            );
+        } else if (cacheEmptyFlowInfo) {
+            headersResourceCache.set(
+                id,
+                NO_FLOW_HEADERS_CACHE,
                 $arguments?.headersCacheTtl
                     ? $arguments?.headersCacheTtl * 1000
                     : undefined,

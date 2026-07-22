@@ -158,14 +158,26 @@ async function getFlowInfo(req, res) {
             );
             return;
         }
-        const flowHeaders = await getFlowHeaders(
-            $arguments?.insecure ? `${url}#insecure` : url,
-            $arguments.flowUserAgent,
-            undefined,
-            sub.proxy,
-            $arguments.flowUrl,
-            $arguments.flowHeaders,
-        );
+        let flowHeaders;
+        try {
+            flowHeaders = await getFlowHeaders(
+                $arguments?.insecure ? `${url}#insecure` : url,
+                $arguments.flowUserAgent,
+                undefined,
+                sub.proxy,
+                $arguments.flowUrl,
+                $arguments.flowHeaders,
+            );
+        } catch (e) {
+            if (!sub.subUserinfo) {
+                throw e;
+            }
+            $.error(
+                `订阅 ${name} 获取远程流量信息失败，将使用自定义流量信息: ${
+                    e.message ?? e
+                }`,
+            );
+        }
         if (!flowHeaders && !sub.subUserinfo) {
             failed(
                 res,
