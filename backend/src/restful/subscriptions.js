@@ -1,6 +1,5 @@
 import {
     NetworkError,
-    InternalServerError,
     ResourceNotFoundError,
     RequestInvalidError,
 } from './errors';
@@ -167,14 +166,7 @@ async function getFlowInfo(req, res) {
             $arguments.flowHeaders,
         );
         if (!flowHeaders && !sub.subUserinfo) {
-            failed(
-                res,
-                new InternalServerError(
-                    'NO_FLOW_INFO',
-                    'No flow info',
-                    `Failed to fetch flow headers`,
-                ),
-            );
+            success(res, {});
             return;
         }
         try {
